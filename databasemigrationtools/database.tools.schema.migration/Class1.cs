@@ -31,11 +31,11 @@ namespace database.tools.schema.migration
         }
     }
 
-    public class JsonConfigurationReader
+    public class JsonFile
     {
         private readonly JObject _json;
 
-        public JsonConfigurationReader(string json)
+        public JsonFile(string json)
         {
             _json = JObject.Parse(json);
         }
@@ -44,6 +44,11 @@ namespace database.tools.schema.migration
         {
             var result = IAmConfiguration.IAmConfigurationBuilder.BuildFromJson(_json);
             return result;
+        }
+
+        public JToken Section(string query)
+        {
+            return _json[query];
         }
     }
 
@@ -70,6 +75,33 @@ namespace database.tools.schema.migration
                 return configuration;
             }
         }        
+    }
+
+    public class Script
+    {
+        public string Filename { get; set; }
+        public string Content { get; set; }
+        public Dictionary<string, string> Variables { get; set; }
+    }
+
+    public interface ISchemaProvider
+    {
+        List<Script> GetScripts(SchemaStore store, JsonFile file);
+        int Order();
+        bool RunAlways();
+    }
+
+    public class InitialSchemaProvider : ISchemaProvider
+    {
+        public int Order() => 1;
+
+        public bool RunAlways() => false;
+
+        public List<Script> GetScripts(SchemaStore store, JsonFile file)
+        {
+            var initalSection = file.Section("Initial");
+            return null;
+        }
     }
 
     public class CustomSqlProvider : IScriptProvider
