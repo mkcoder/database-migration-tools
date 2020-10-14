@@ -34,15 +34,16 @@ namespace database.tools.schema.migration
     public class JsonFile
     {
         private readonly JObject _json;
+        private readonly IAmConfiguration result;
 
         public JsonFile(string json)
         {
             _json = JObject.Parse(json);
+            result = IAmConfiguration.IAmConfigurationBuilder.BuildFromJson(_json);
         }
 
         public IAmConfiguration CreateConfiguration()
         {
-            var result = IAmConfiguration.IAmConfigurationBuilder.BuildFromJson(_json);
             return result;
         }
 
@@ -77,49 +78,162 @@ namespace database.tools.schema.migration
         }        
     }
 
+    public enum Order
+    {
+        Next = -1,
+    }
+
     public class Script
     {
-        public string Filename { get; set; }
-        public string Content { get; set; }
-        public Dictionary<string, string> Variables { get; set; }
+        public string FilePath { get; set; }
+        public string Content {
+            get
+            {
+                using var fs = new StreamReader(FilePath);
+                return fs.ReadToEnd();
+            }
+        }
+
+        public static Script CreateFromJObject(JObject obj, string root)
+        {
+            var script = new Script();
+            script.FilePath = $"{root}\\{((string)obj["Filename"])}";
+            return script;
+        }
     }
 
     public interface ISchemaProvider
     {
-        List<Script> GetScripts(SchemaStore store, JsonFile file);
+        List<Script> GetScripts();
         int Order();
         bool RunAlways();
+        bool RunOnce();
+        void GetVariables(Dictionary<string, string> keyValuePairs);
     }
 
-    public class InitialSchemaProvider : ISchemaProvider
+    public abstract class BaseSchemaProvider : ISchemaProvider
     {
-        public int Order() => 1;
+        protected readonly SchemaStore store;
+        protected readonly JsonFile file;
 
-        public bool RunAlways() => false;
-
-        public List<Script> GetScripts(SchemaStore store, JsonFile file)
+        public BaseSchemaProvider(SchemaStore store, JsonFile file)
         {
-            var initalSection = file.Section("Initial");
-            return null;
+            this.store = store;
+            this.file = file;
         }
+
+        public abstract int Order();
+        public abstract bool RunAlways();
+        public abstract bool RunOnce();
+        public abstract JToken GetSection();
+
+        public virtual List<Script> GetScripts()
+        {
+            var result = new List<Script>();
+            var section = GetSection();
+            foreach (JObject configuration in section)
+            {
+                result.Add(Script.CreateFromJObject(configuration, file.CreateConfiguration().SchemaLocation));
+            }
+            return result;
+        }
+
+        public virtual void GetVariables(Dictionary<string, string> keyValuePairs)
+        {
+        }
+    }
+
+    public class InitialSchemaProvider : BaseSchemaProvider
+    {
+        public InitialSchemaProvider(SchemaStore store, JsonFile file) : base(store, file)
+        {
+        }
+
+        public override int Order() => 1;
+
+        public override bool RunAlways() => false;
+
+        public override bool RunOnce() => true;
+
+        public override JToken GetSection() => file.Section("Inital");
+    }
+
+    public class PreSchemaProvider : BaseSchemaProvider
+    {
+        public PreSchemaProvider(SchemaStore store, JsonFile file) : base(store, file)
+        {
+        }
+
+        public override int Order() => 2;
+
+        public override bool RunAlways() => true;
+
+        public override bool RunOnce() => false;
+
+        public override JToken GetSection() => file.Section("Pre");
+
+    }
+
+    public class ApplySchemaProvider : BaseSchemaProvider
+    {
+        public ApplySchemaProvider(SchemaStore store, JsonFile file) : base(store, file)
+        {
+        }
+
+        public override int Order() => 3;
+
+        public override bool RunAlways() => false;
+
+        public override bool RunOnce() => false;
+
+        public override JToken GetSection() => file.Section("Apply");
+    }
+
+    public class PostSchemaProvider : BaseSchemaProvider
+    {
+        public PostSchemaProvider(SchemaStore store, JsonFile file) : base(store, file)
+        {
+        }
+
+        public override int Order() => 4;
+
+        public override bool RunAlways() => true;
+
+        public override bool RunOnce() => false;
+
+        public override JToken GetSection() => file.Section("Post");
     }
 
     public class CustomSqlProvider : IScriptProvider
     {
+        private readonly ISchemaProvider schemas;
+        private readonly SqlScriptOptions options;
+
+        public CustomSqlProvider(ISchemaProvider schemas, SqlScriptOptions options)
+        {
+            this.schemas = schemas;
+            this.options = options;
+        }
+
         public IEnumerable<SqlScript> GetScripts(IConnectionManager connectionManager)
         {
-            var script = new SqlScript("", "");
-            script.SqlScriptOptions.ScriptType = DbUp.Support.ScriptType.RunAlways
-            throw new NotImplementedException();
+            var myScripts = new List<MyCustomSqlScript>();
+            foreach (var item in schemas.GetScripts())
+            {
+                myScripts.Add(new MyCustomSqlScript(item.FilePath, item.Content, options));
+            }
+            return myScripts;
         }
     }
 
-    public class MyCustomSqlScript : IScript
+    public class MyCustomSqlScript : SqlScript
     {
-        public string ProvideScript(Func<IDbCommand> dbCommandFactory)
+        public MyCustomSqlScript(string name, string contents) : base(name, contents)
         {
-            dbCommandFactory.Invoke();
-            throw new NotImplementedException();
+        }
+
+        public MyCustomSqlScript(string name, string contents, SqlScriptOptions sqlScriptOptions) : base(name, contents, sqlScriptOptions)
+        {
         }
     }
 }
