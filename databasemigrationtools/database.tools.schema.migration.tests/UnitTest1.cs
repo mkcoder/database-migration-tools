@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using DbUp;
 using DbUp.Engine;
@@ -9,23 +10,50 @@ namespace database.tools.schema.migration.tests
 {
     public class Tests
     {
-        private readonly ISchemaProvider schemaProvider = new InitialSchemaProvider(new SchemaStore(""), new JsonFile(""));
+        private readonly JsonFile jsonFile;// = new JsonFile("");
+        private readonly SchemaStore store;// = new SchemaStore(jsonFile.CreateConfiguration().SchemaLocation);
+        private readonly List<ISchemaProvider> defaultSchemas;// = new InitialSchemaProvider(new SchemaStore(""), new JsonFile(""));
+
+        public Tests()
+        {
+            var json = "";
+            jsonFile = new JsonFile(json);
+            store = new SchemaStore(jsonFile.Configuration.SchemaLocation);
+            defaultSchemas = new List<ISchemaProvider>()
+            {
+                new InitialSchemaProvider(store, jsonFile),
+                new PreSchemaProvider(store, jsonFile),
+                new ApplySchemaProvider(store, jsonFile),
+                new PostSchemaProvider(store, jsonFile)
+            };
+        }
 
         [SetUp]
         public void Setup()
         {
             // get a list of ISchemaProvider
-            var listP = new List<ISchemaProvider>();
             var upgrader =
                 DeployChanges.To
-                    .SqlDatabase("");
-            foreach (var item in listP)
+                    .SqlDatabase(jsonFile.Configuration.ConnectionString);
+            var max = defaultSchemas.Max(p => p.Order());
+            var dictionary = new Dictionary<string, string>();
+
+            defaultSchemas.OrderByDescending(p => p.Order());
+
+            foreach (var item in defaultSchemas)
             {
-                var options = new SqlScriptOptions()
+                var options = new SqlScriptOptions();
+
+                if(item.Order() == (int)Order.Next)
                 {
-                    RunGroupOrder = item.Order(),
-                };
-                if(item.RunAlways())
+                    options.RunGroupOrder = ++max;
+                }
+                else
+                {
+                    options.RunGroupOrder = item.Order();
+                }
+                
+                if (item.RunAlways())
                 {
                     options.ScriptType = DbUp.Support.ScriptType.RunAlways;
                 }
@@ -34,9 +62,15 @@ namespace database.tools.schema.migration.tests
                     options.ScriptType = DbUp.Support.ScriptType.RunOnce;
                 }
 
-                upgrader.WithScripts(new CustomSqlProvider(item, defaultOption))
+                item.GetVariables(dictionary);
+
+                upgrader
+                    .WithScripts(new CustomSqlProvider(item, options));
             }
-                    
+
+            upgrader
+                .WithVariablesEnabled()
+                .WithVariables(dictionary);
         }
 
         [Test]

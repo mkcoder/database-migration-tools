@@ -42,10 +42,7 @@ namespace database.tools.schema.migration
             result = IAmConfiguration.IAmConfigurationBuilder.BuildFromJson(_json);
         }
 
-        public IAmConfiguration CreateConfiguration()
-        {
-            return result;
-        }
+        public IAmConfiguration Configuration { get => result; }
 
         public JToken Section(string query)
         {
@@ -81,6 +78,7 @@ namespace database.tools.schema.migration
     public enum Order
     {
         Next = -1,
+        Any = -2,
     }
 
     public class Script
@@ -133,7 +131,7 @@ namespace database.tools.schema.migration
             var section = GetSection();
             foreach (JObject configuration in section)
             {
-                result.Add(Script.CreateFromJObject(configuration, file.CreateConfiguration().SchemaLocation));
+                result.Add(Script.CreateFromJObject(configuration, file.Configuration.SchemaLocation));
             }
             return result;
         }
