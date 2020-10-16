@@ -16,7 +16,12 @@ namespace database.tools.schema.migration.tests
 
         public Tests()
         {
-            var json = "";
+            var json = @"
+{
+    
+
+}
+";
             jsonFile = new JsonFile(json);
             store = new SchemaStore(jsonFile.Configuration.SchemaLocation);
             defaultSchemas = new List<ISchemaProvider>()
@@ -62,10 +67,10 @@ namespace database.tools.schema.migration.tests
                     options.ScriptType = DbUp.Support.ScriptType.RunOnce;
                 }
 
-                item.GetVariables(dictionary);
+                item.UpdateVariable(dictionary);
 
                 upgrader
-                    .WithScripts(new CustomSqlProvider(item, options));
+                    .WithScripts(new CustomSqlProvider(item, store, options));
             }
 
             upgrader

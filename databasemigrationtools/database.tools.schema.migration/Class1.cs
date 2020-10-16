@@ -4,6 +4,8 @@ using System.Data;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text;
+using System.Text.Unicode;
 using DbUp;
 using DbUp.Engine;
 using DbUp.Engine.Transactions;
@@ -42,11 +44,35 @@ namespace database.tools.schema.migration
             result = IAmConfiguration.IAmConfigurationBuilder.BuildFromJson(_json);
         }
 
+        public string GetJsonHash()
+        {
+            var jsonString = _json.ToString();
+            if (String.IsNullOrEmpty(jsonString))
+                return String.Empty;
+
+            using var sha = new System.Security.Cryptography.SHA256Managed();
+            byte[] textData = System.Text.Encoding.UTF8.GetBytes(jsonString);
+            byte[] hash = sha.ComputeHash(textData);
+            return BitConverter.ToString(hash).Replace("-", String.Empty);
+        }
+
         public IAmConfiguration Configuration { get => result; }
 
         public JToken Section(string query)
         {
             return _json[query];
+        }
+
+        public void Save(Stream stream)
+        {
+            if(!stream.CanWrite)
+            {
+                throw new Exception("Json file can only write to a writeable stream!");
+            }
+
+            _json["Version"] = GetJsonHash();
+            var myJsonByte = Encoding.UTF8.GetBytes(_json.ToString());
+            stream.Write(myJsonByte, 0, myJsonByte.Count());
         }
     }
 
@@ -83,19 +109,12 @@ namespace database.tools.schema.migration
 
     public class Script
     {
-        public string FilePath { get; set; }
-        public string Content {
-            get
-            {
-                using var fs = new StreamReader(FilePath);
-                return fs.ReadToEnd();
-            }
-        }
+        public string Filename { get; set; }
 
-        public static Script CreateFromJObject(JObject obj, string root)
+        public static Script CreateFromJObject(JObject obj)
         {
             var script = new Script();
-            script.FilePath = $"{root}\\{((string)obj["Filename"])}";
+            script.Filename = (string)obj["Filename"];
             return script;
         }
     }
@@ -106,7 +125,7 @@ namespace database.tools.schema.migration
         int Order();
         bool RunAlways();
         bool RunOnce();
-        void GetVariables(Dictionary<string, string> keyValuePairs);
+        void UpdateVariable(Dictionary<string, string> keyValuePairs);
     }
 
     public abstract class BaseSchemaProvider : ISchemaProvider
@@ -131,12 +150,12 @@ namespace database.tools.schema.migration
             var section = GetSection();
             foreach (JObject configuration in section)
             {
-                result.Add(Script.CreateFromJObject(configuration, file.Configuration.SchemaLocation));
+                result.Add(Script.CreateFromJObject(configuration));
             }
             return result;
         }
 
-        public virtual void GetVariables(Dictionary<string, string> keyValuePairs)
+        public virtual void UpdateVariable(Dictionary<string, string> keyValuePairs)
         {
         }
     }
@@ -205,11 +224,13 @@ namespace database.tools.schema.migration
     public class CustomSqlProvider : IScriptProvider
     {
         private readonly ISchemaProvider schemas;
+        private readonly SchemaStore store;
         private readonly SqlScriptOptions options;
 
-        public CustomSqlProvider(ISchemaProvider schemas, SqlScriptOptions options)
+        public CustomSqlProvider(ISchemaProvider schemas, SchemaStore store, SqlScriptOptions options)
         {
             this.schemas = schemas;
+            this.store = store;
             this.options = options;
         }
 
@@ -218,7 +239,8 @@ namespace database.tools.schema.migration
             var myScripts = new List<MyCustomSqlScript>();
             foreach (var item in schemas.GetScripts())
             {
-                myScripts.Add(new MyCustomSqlScript(item.FilePath, item.Content, options));
+                var content = store.RetrieveSchema(item.Filename).ReadToEnd();
+                myScripts.Add(new MyCustomSqlScript(item.Filename, content, options));
             }
             return myScripts;
         }

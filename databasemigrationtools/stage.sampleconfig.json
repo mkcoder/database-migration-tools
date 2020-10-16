@@ -1,0 +1,18 @@
+﻿{
+  "Name": "My simple schema migration file",
+  "Version": "Guid",
+  "ConnectionString": "",
+  "SchemaStore": "",
+  "TimeoutAfter":  "3",
+  "InitalFiles": [
+    {
+      "Filename": "MyDatabaseToday.sql",
+      "Options": {
+        "OutputSuccess": "true",
+        "Params": {
+          "@key": "@value"
+        }
+      }
+    }
+  ]
+}
